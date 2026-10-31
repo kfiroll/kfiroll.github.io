@@ -1,12 +1,26 @@
 // Renders the editable draft: absolutely-positioned grid cells per page,
 // with drag-and-drop photo swapping, inline caption editing, a manual per-page
-// layout override, a movable text frame, and a per-frame zoom/pan control.
+// layout override, a movable text frame, a per-frame zoom/pan control, photo
+// deletion, a page-number stamp, and a two-page spread view.
 
 let dragSource = null; // { dayIdx, pageIdx, cellIdx }
+let spreadView = false;
+
+function setSpreadView(on, project, containerEl) {
+  spreadView = on;
+  renderDraft(project, containerEl);
+}
 
 function renderDraft(project, containerEl) {
   containerEl.innerHTML = "";
+  containerEl.classList.toggle("spread-mode", spreadView);
 
+  if (spreadView) renderSpreadMode(project, containerEl);
+  else renderSingleMode(project, containerEl);
+}
+
+function renderSingleMode(project, containerEl) {
+  let pageNum = 0;
   project.days.forEach((day, dayIdx) => {
     const heading = document.createElement("div");
     heading.className = "day-heading";
@@ -14,74 +28,114 @@ function renderDraft(project, containerEl) {
     containerEl.appendChild(heading);
 
     day.pages.forEach((page, pageIdx) => {
-      const wrap = document.createElement("div");
-      wrap.className = "page-wrap";
-
-      const labelRow = document.createElement("div");
-      labelRow.className = "page-label-row";
-
-      const label = document.createElement("div");
-      label.className = "page-label";
-      label.textContent = `Page ${pageIdx + 1} of ${day.pages.length}`;
-      labelRow.appendChild(label);
-
-      const layoutPicker = document.createElement("select");
-      layoutPicker.className = "layout-picker";
-      layoutPicker.title = "Change this page's layout";
-      GRIDS.forEach((g) => {
-        const opt = document.createElement("option");
-        opt.value = g.id;
-        opt.textContent = `${g.id} (${g.cellCount} photos)`;
-        if (g.id === page.layoutId) opt.selected = true;
-        layoutPicker.appendChild(opt);
-      });
-      layoutPicker.addEventListener("change", () => {
-        replanPageLayout(project, dayIdx, pageIdx, layoutPicker.value);
-        renderDraft(project, containerEl);
-      });
-      labelRow.appendChild(layoutPicker);
-
-      wrap.appendChild(labelRow);
-
-      const pageEl = document.createElement("div");
-      pageEl.className = "page";
-
-      page.cells.forEach((cell, cellIdx) => {
-        const geom = page.grid.cells[cellIdx];
-        const cellEl = document.createElement("div");
-        cellEl.className = "cell";
-        cellEl.style.left = (geom.x * 100).toFixed(3) + "%";
-        cellEl.style.top = (geom.y * 100).toFixed(3) + "%";
-        cellEl.style.width = (geom.w * 100).toFixed(3) + "%";
-        cellEl.style.height = (geom.h * 100).toFixed(3) + "%";
-        cellEl.dataset.day = dayIdx;
-        cellEl.dataset.page = pageIdx;
-        cellEl.dataset.cell = cellIdx;
-
-        if (cell.type === "photo") {
-          buildPhotoCell(cellEl, project, containerEl, day, page, cell, dayIdx, pageIdx, cellIdx, geom);
-        } else if (cell.type === "text") {
-          cellEl.classList.add("text-cell");
-          const ta = document.createElement("textarea");
-          ta.placeholder = "Day title / notes (leave blank to print empty)";
-          ta.value = cell.text || "";
-          ta.addEventListener("input", () => {
-            cell.text = ta.value;
-          });
-          cellEl.appendChild(ta);
-        } else {
-          cellEl.classList.add("empty-cell");
-          cellEl.textContent = "empty";
-          attachDropTarget(cellEl, project, dayIdx, pageIdx, cellIdx);
-        }
-
-        pageEl.appendChild(cellEl);
-      });
-
-      wrap.appendChild(pageEl);
+      pageNum++;
+      const wrap = buildPageWrap(project, containerEl, day, dayIdx, page, pageIdx, pageNum, `Page ${pageIdx + 1} of ${day.pages.length}`);
       containerEl.appendChild(wrap);
     });
   });
+}
+
+// Two pages per row, in the same global left-right order the layout engine itself
+// used to decide which layouts can't repeat — so what you see paired here is exactly
+// what will face each other in the printed book.
+function renderSpreadMode(project, containerEl) {
+  const flat = [];
+  project.days.forEach((day, dayIdx) => {
+    day.pages.forEach((page, pageIdx) => flat.push({ day, dayIdx, page, pageIdx }));
+  });
+
+  for (let i = 0; i < flat.length; i += 2) {
+    const row = document.createElement("div");
+    row.className = "spread-row";
+
+    const left = flat[i];
+    const leftWrap = buildPageWrap(project, containerEl, left.day, left.dayIdx, left.page, left.pageIdx, i + 1, left.day.name);
+    leftWrap.classList.add("spread-page");
+    row.appendChild(leftWrap);
+
+    const right = flat[i + 1];
+    if (right) {
+      const rightWrap = buildPageWrap(project, containerEl, right.day, right.dayIdx, right.page, right.pageIdx, i + 2, right.day.name);
+      rightWrap.classList.add("spread-page");
+      row.appendChild(rightWrap);
+    }
+
+    containerEl.appendChild(row);
+  }
+}
+
+function buildPageWrap(project, containerEl, day, dayIdx, page, pageIdx, globalPageNum, labelText) {
+  const wrap = document.createElement("div");
+  wrap.className = "page-wrap";
+
+  const labelRow = document.createElement("div");
+  labelRow.className = "page-label-row";
+
+  const label = document.createElement("div");
+  label.className = "page-label";
+  label.textContent = labelText;
+  labelRow.appendChild(label);
+
+  const layoutPicker = document.createElement("select");
+  layoutPicker.className = "layout-picker";
+  layoutPicker.title = "Change this page's layout";
+  GRIDS.forEach((g) => {
+    const opt = document.createElement("option");
+    opt.value = g.id;
+    opt.textContent = `${g.id} (${g.cellCount} photos)`;
+    if (g.id === page.layoutId) opt.selected = true;
+    layoutPicker.appendChild(opt);
+  });
+  layoutPicker.addEventListener("change", () => {
+    replanPageLayout(project, dayIdx, pageIdx, layoutPicker.value);
+    renderDraft(project, containerEl);
+  });
+  labelRow.appendChild(layoutPicker);
+
+  wrap.appendChild(labelRow);
+
+  const pageEl = document.createElement("div");
+  pageEl.className = "page";
+
+  page.cells.forEach((cell, cellIdx) => {
+    const geom = page.grid.cells[cellIdx];
+    const cellEl = document.createElement("div");
+    cellEl.className = "cell";
+    cellEl.style.left = (geom.x * 100).toFixed(3) + "%";
+    cellEl.style.top = (geom.y * 100).toFixed(3) + "%";
+    cellEl.style.width = (geom.w * 100).toFixed(3) + "%";
+    cellEl.style.height = (geom.h * 100).toFixed(3) + "%";
+    cellEl.dataset.day = dayIdx;
+    cellEl.dataset.page = pageIdx;
+    cellEl.dataset.cell = cellIdx;
+
+    if (cell.type === "photo") {
+      buildPhotoCell(cellEl, project, containerEl, day, page, cell, dayIdx, pageIdx, cellIdx, geom);
+    } else if (cell.type === "text") {
+      cellEl.classList.add("text-cell");
+      const ta = document.createElement("textarea");
+      ta.placeholder = "Day title / notes (leave blank to print empty)";
+      ta.value = cell.text || "";
+      ta.addEventListener("input", () => {
+        cell.text = ta.value;
+      });
+      cellEl.appendChild(ta);
+    } else {
+      cellEl.classList.add("empty-cell");
+      cellEl.textContent = "empty";
+      attachDropTarget(cellEl, project, dayIdx, pageIdx, cellIdx);
+    }
+
+    pageEl.appendChild(cellEl);
+  });
+
+  const stamp = document.createElement("div");
+  stamp.className = "page-number-stamp";
+  stamp.textContent = String(globalPageNum);
+  pageEl.appendChild(stamp);
+
+  wrap.appendChild(pageEl);
+  return wrap;
 }
 
 // Sizes/positions the <img> inside its (overflow-hidden) cell to match the crop
@@ -120,6 +174,19 @@ function buildPhotoCell(cellEl, project, containerEl, day, page, cell, dayIdx, p
   });
   cellEl.addEventListener("dragend", () => cellEl.classList.remove("dragging"));
   attachDropTarget(cellEl, project, dayIdx, pageIdx, cellIdx);
+
+  const deleteBtn = document.createElement("button");
+  deleteBtn.type = "button";
+  deleteBtn.className = "delete-photo-btn";
+  deleteBtn.title = "Remove this photo from the album";
+  deleteBtn.textContent = "✕";
+  deleteBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (!confirm("Remove this photo from the album? The rest of the day will re-fill automatically.")) return;
+    deletePhoto(project, dayIdx, pageIdx, cellIdx);
+    renderDraft(project, containerEl);
+  });
+  cellEl.appendChild(deleteBtn);
 
   if (page.textSlot != null) {
     const makeTextBtn = document.createElement("button");

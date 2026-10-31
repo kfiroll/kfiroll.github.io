@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Trip Album Builder</title>
-<link rel="stylesheet" href="css/style.css?v=5" />
+<link rel="stylesheet" href="css/style.css?v=7" />
 </head>
 <body>
 <div class="app">
@@ -52,8 +52,9 @@
         </div>
         <div id="draftToolbar" class="draft-toolbar" hidden>
           <div class="draft-title" id="draftTitle"></div>
-          <div class="draft-hint">Drag a photo onto another to swap places, or tap 🔍 to zoom/reposition it within its frame. Click the shaded cell on a day's first page to edit its caption, or tap "Aa" on any photo to move the text frame there.</div>
+          <div class="draft-hint">Drag a photo onto another to swap places, or tap 🔍 to zoom/reposition it within its frame. Click the shaded cell on a day's first page to edit its caption, tap "Aa" on any photo to move the text frame there, or ✕ to remove a photo from the album.</div>
           <div class="draft-actions">
+            <button id="spreadViewBtn" class="ghost-btn">Spread view</button>
             <button id="rebuildBtn" class="ghost-btn">Reshuffle layouts</button>
             <button id="approveBtn" class="primary-btn">Approve &amp; Export PDF (200 DPI)</button>
           </div>

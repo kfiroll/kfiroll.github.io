@@ -251,3 +251,83 @@ function setTextSlot(project, dayIdx, pageIdx, newTextCellIndex) {
   rebuilt.cells[newTextCellIndex].text = oldText.text;
   project.days[dayIdx].pages[pageIdx] = rebuilt;
 }
+
+// The layout id of the page immediately before (dayIdx, pageIdx) in the whole book —
+// possibly the last page of an earlier day. null if this is the very first page.
+function prevPageLayoutId(project, dayIdx, pageIdx) {
+  if (pageIdx > 0) return project.days[dayIdx].pages[pageIdx - 1].layoutId;
+  for (let d = dayIdx - 1; d >= 0; d--) {
+    const pages = project.days[d].pages;
+    if (pages.length > 0) return pages[pages.length - 1].layoutId;
+  }
+  return null;
+}
+
+// Plans a run of pages for `photosLength` photos starting at (dayIdx, pageIdx)'s
+// position in the book: if `isFirstPage`, the first page gets a text slot (reusing
+// solveTail, which already does the rest, for everything after it) — otherwise it's
+// just solveTail outright. Shared by deletePhoto below.
+function solveDayFrom(photosLength, isFirstPage, parity, prevId) {
+  if (!isFirstPage) return solveTail(photosLength, parity, prevId, new Map());
+
+  if (photosLength < 4) {
+    const grid = FIRST_CAPACITY_GROUPS[Math.min(...FIRST_CAPS)][0];
+    const collision = parity === 1 && grid.id === prevId ? 1 : 0;
+    return { cost: collision, steps: [{ cap: photosLength, grid, isFirst: true }] };
+  }
+
+  let best = null;
+  for (const cap of FIRST_CAPS) {
+    if (cap > photosLength) continue;
+    const leftover = photosLength - cap;
+    if (leftover !== 0 && leftover < 5) continue;
+    for (const grid of FIRST_CAPACITY_GROUPS[cap]) {
+      const collision = parity === 1 && grid.id === prevId ? 1 : 0;
+      const sub = solveTail(leftover, (parity + 1) % 2, grid.id, new Map());
+      const cost = collision + sub.cost;
+      if (isBetter(cost, best)) {
+        best = { cost, steps: [{ cap, grid, isFirst: true }, ...sub.steps] };
+      }
+    }
+  }
+  return best;
+}
+
+// Removes one photo from the album entirely and replans day `dayIdx` from the page it
+// was on, so the day stays fully filled with photos (no leftover blank cells) just
+// like everywhere else — pages before it are untouched. Mutates `project` in place.
+function deletePhoto(project, dayIdx, pageIdx, cellIdx) {
+  const day = project.days[dayIdx];
+  const page = day.pages[pageIdx];
+  const deletedPhoto = page.cells[cellIdx].photo;
+  const isFirstPage = pageIdx === 0;
+  const oldText = page.cells.find((c) => c.type === "text");
+
+  const tailPhotos = [];
+  for (let i = pageIdx; i < day.pages.length; i++) {
+    day.pages[i].cells.forEach((c) => {
+      if (c.type === "photo" && c.photo !== deletedPhoto) tailPhotos.push(c.photo);
+    });
+  }
+
+  if (tailPhotos.length === 0) {
+    day.pages = isFirstPage ? [buildPage(page.grid, [], true, oldText ? page.textSlot : undefined)] : day.pages.slice(0, pageIdx);
+    if (isFirstPage && oldText) day.pages[0].cells[day.pages[0].textSlot].text = oldText.text;
+    return;
+  }
+
+  const parity = globalPageIndex(project, dayIdx, pageIdx) % 2;
+  const prevId = prevPageLayoutId(project, dayIdx, pageIdx);
+  const solved = solveDayFrom(tailPhotos.length, isFirstPage, parity, prevId);
+
+  const newPages = day.pages.slice(0, pageIdx);
+  let cursor = 0;
+  solved.steps.forEach((s) => {
+    const photos = tailPhotos.slice(cursor, cursor + s.cap);
+    cursor += photos.length;
+    const built = buildPage(s.grid, photos, s.isFirst);
+    if (s.isFirst && oldText) built.cells[built.textSlot].text = oldText.text;
+    newPages.push(built);
+  });
+  day.pages = newPages;
+}

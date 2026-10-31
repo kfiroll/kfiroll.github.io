@@ -214,6 +214,7 @@ const draftTitleEl = document.getElementById("draftTitle");
 const pagesEl = document.getElementById("pages");
 const rebuildBtn = document.getElementById("rebuildBtn");
 const approveBtn = document.getElementById("approveBtn");
+const spreadViewBtn = document.getElementById("spreadViewBtn");
 
 buildDraftBtn.addEventListener("click", () => {
   if (!sourceDays) return;
@@ -237,6 +238,15 @@ function buildProject() {
 rebuildBtn.addEventListener("click", () => {
   if (!sourceDays) return;
   buildProject();
+});
+
+let spreadViewOn = false;
+spreadViewBtn.addEventListener("click", () => {
+  if (!project) return;
+  spreadViewOn = !spreadViewOn;
+  spreadViewBtn.textContent = spreadViewOn ? "Single page view" : "Spread view";
+  spreadViewBtn.classList.toggle("active", spreadViewOn);
+  setSpreadView(spreadViewOn, project, pagesEl);
 });
 
 // ---------- Export ----------
