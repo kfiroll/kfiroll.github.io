@@ -1,9 +1,17 @@
 // Rasterizes each page at 200 DPI onto a canvas (cells cropped to fill, "cover" style,
 // exactly matching the grid geometry taken from Grid_Design.pdf) and assembles a PDF
-// via pdf-lib. Page size is kept identical to the source grid: 30x30cm (850.39pt).
+// via pdf-lib. The grid itself (js/grids.js) is stored as 0-1 fractions of the page,
+// so it's physical-size-agnostic — exportPdf takes `sizeCm` (e.g. 30 or 20) and
+// everything scales from that one number.
 
 const DPI = 200;
-const PAGE_PX = Math.round((PAGE_SIZE_PT / 72) * DPI); // 2362px
+
+function pageSizePt(sizeCm) {
+  return (sizeCm / 2.54) * 72;
+}
+function pagePx(sizeCm) {
+  return Math.round((pageSizePt(sizeCm) / 72) * DPI);
+}
 
 function loadImage(url) {
   return new Promise((resolve, reject) => {
@@ -64,42 +72,42 @@ function wrapText(ctx, text, maxWidth) {
   return lines;
 }
 
-function drawCoverPage(albumTitle, dayCount) {
+function drawCoverPage(albumTitle, dayCount, px) {
   const canvas = document.createElement("canvas");
-  canvas.width = PAGE_PX;
-  canvas.height = PAGE_PX;
+  canvas.width = px;
+  canvas.height = px;
   const ctx = canvas.getContext("2d");
   ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, PAGE_PX, PAGE_PX);
+  ctx.fillRect(0, 0, px, px);
 
   ctx.fillStyle = "#2a2622";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.font = `${Math.round(PAGE_PX * 0.07)}px Georgia, serif`;
-  ctx.fillText(albumTitle || "Trip Album", PAGE_PX / 2, PAGE_PX / 2 - PAGE_PX * 0.02);
+  ctx.font = `${Math.round(px * 0.07)}px Georgia, serif`;
+  ctx.fillText(albumTitle || "Trip Album", px / 2, px / 2 - px * 0.02);
 
   ctx.fillStyle = "#b5651d";
-  ctx.font = `${Math.round(PAGE_PX * 0.025)}px Georgia, serif`;
-  ctx.fillText(`${dayCount} day${dayCount === 1 ? "" : "s"}`, PAGE_PX / 2, PAGE_PX / 2 + PAGE_PX * 0.05);
+  ctx.font = `${Math.round(px * 0.025)}px Georgia, serif`;
+  ctx.fillText(`${dayCount} day${dayCount === 1 ? "" : "s"}`, px / 2, px / 2 + px * 0.05);
 
   return canvas;
 }
 
-async function drawGridPage(page, pageNumber) {
+async function drawGridPage(page, pageNumber, px) {
   const canvas = document.createElement("canvas");
-  canvas.width = PAGE_PX;
-  canvas.height = PAGE_PX;
+  canvas.width = px;
+  canvas.height = px;
   const ctx = canvas.getContext("2d");
   ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, PAGE_PX, PAGE_PX);
+  ctx.fillRect(0, 0, px, px);
 
   for (let i = 0; i < page.cells.length; i++) {
     const cell = page.cells[i];
     const geom = page.grid.cells[i];
-    const dx = Math.round(geom.x * PAGE_PX);
-    const dy = Math.round(geom.y * PAGE_PX);
-    const dw = Math.round(geom.w * PAGE_PX);
-    const dh = Math.round(geom.h * PAGE_PX);
+    const dx = Math.round(geom.x * px);
+    const dy = Math.round(geom.y * px);
+    const dw = Math.round(geom.w * px);
+    const dh = Math.round(geom.h * px);
 
     if (cell.type === "photo") {
       const img = await loadImage(cell.photo.url);
@@ -107,11 +115,11 @@ async function drawGridPage(page, pageNumber) {
     } else if (cell.type === "text") {
       const text = (cell.text || "").trim();
       if (text) {
-        const pad = Math.round(PAGE_PX * 0.012);
+        const pad = Math.round(px * 0.012);
         ctx.fillStyle = "#3a2d18";
         ctx.textAlign = "left";
         ctx.textBaseline = "top";
-        const fontSize = Math.round(PAGE_PX * 0.022);
+        const fontSize = Math.round(px * 0.022);
         ctx.font = `${fontSize}px Georgia, serif`;
         const lineHeight = fontSize * 1.35;
         const maxWidth = dw - pad * 2;
@@ -132,8 +140,8 @@ async function drawGridPage(page, pageNumber) {
     ctx.fillStyle = "#9a9284";
     ctx.textAlign = "center";
     ctx.textBaseline = "alphabetic";
-    ctx.font = `${Math.round(PAGE_PX * 0.014)}px Georgia, serif`;
-    ctx.fillText(String(pageNumber), PAGE_PX / 2, PAGE_PX - PAGE_PX * 0.028);
+    ctx.font = `${Math.round(px * 0.014)}px Georgia, serif`;
+    ctx.fillText(String(pageNumber), px / 2, px - px * 0.028);
   }
 
   return canvas;
@@ -157,26 +165,28 @@ function makeThumbnail(canvas, size) {
   return t.toDataURL("image/jpeg", 0.85);
 }
 
-async function exportPdf(project, albumTitle, onProgress) {
+async function exportPdf(project, albumTitle, sizeCm, onProgress) {
+  const ptVal = pageSizePt(sizeCm);
+  const pxVal = pagePx(sizeCm);
   const pdfDoc = await PDFLib.PDFDocument.create();
 
-  const cover = drawCoverPage(albumTitle, project.days.length);
+  const cover = drawCoverPage(albumTitle, project.days.length, pxVal);
   const thumbnailDataUrl = makeThumbnail(cover, 160);
   const coverBytes = await canvasToJpegBytes(cover);
   const coverImg = await pdfDoc.embedJpg(coverBytes);
-  const coverPage = pdfDoc.addPage([PAGE_SIZE_PT, PAGE_SIZE_PT]);
-  coverPage.drawImage(coverImg, { x: 0, y: 0, width: PAGE_SIZE_PT, height: PAGE_SIZE_PT });
+  const coverPage = pdfDoc.addPage([ptVal, ptVal]);
+  coverPage.drawImage(coverImg, { x: 0, y: 0, width: ptVal, height: ptVal });
 
   let totalPages = project.days.reduce((n, d) => n + d.pages.length, 0);
   let done = 0;
 
   for (const day of project.days) {
     for (const page of day.pages) {
-      const canvas = await drawGridPage(page, done + 1);
+      const canvas = await drawGridPage(page, done + 1, pxVal);
       const bytes = await canvasToJpegBytes(canvas);
       const img = await pdfDoc.embedJpg(bytes);
-      const pdfPage = pdfDoc.addPage([PAGE_SIZE_PT, PAGE_SIZE_PT]);
-      pdfPage.drawImage(img, { x: 0, y: 0, width: PAGE_SIZE_PT, height: PAGE_SIZE_PT });
+      const pdfPage = pdfDoc.addPage([ptVal, ptVal]);
+      pdfPage.drawImage(img, { x: 0, y: 0, width: ptVal, height: ptVal });
       done++;
       if (onProgress) onProgress(done, totalPages);
     }

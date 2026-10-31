@@ -129,7 +129,7 @@ function buildPageWrap(project, containerEl, day, dayIdx, page, pageIdx, globalP
     } else {
       cellEl.classList.add("empty-cell");
       cellEl.textContent = "empty";
-      attachDropTarget(cellEl, project, dayIdx, pageIdx, cellIdx);
+      attachDropTarget(cellEl, project, containerEl, dayIdx, pageIdx, cellIdx);
     }
 
     pageEl.appendChild(cellEl);
@@ -179,7 +179,7 @@ function buildPhotoCell(cellEl, project, containerEl, day, page, cell, dayIdx, p
     e.dataTransfer.setData("text/plain", ""); // Firefox needs data set to allow the drag
   });
   cellEl.addEventListener("dragend", () => cellEl.classList.remove("dragging"));
-  attachDropTarget(cellEl, project, dayIdx, pageIdx, cellIdx);
+  attachDropTarget(cellEl, project, containerEl, dayIdx, pageIdx, cellIdx);
 
   const deleteBtn = document.createElement("button");
   deleteBtn.type = "button";
@@ -346,7 +346,7 @@ function clamp01(v) {
   return Math.max(0, Math.min(1, v));
 }
 
-function attachDropTarget(cellEl, project, dayIdx, pageIdx, cellIdx) {
+function attachDropTarget(cellEl, project, containerEl, dayIdx, pageIdx, cellIdx) {
   cellEl.addEventListener("dragover", (e) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
@@ -360,7 +360,7 @@ function attachDropTarget(cellEl, project, dayIdx, pageIdx, cellIdx) {
     const target = { dayIdx, pageIdx, cellIdx };
     swapCells(project, dragSource, target);
     dragSource = null;
-    renderDraft(project, document.getElementById("pages"));
+    renderDraft(project, containerEl);
   });
 }
 

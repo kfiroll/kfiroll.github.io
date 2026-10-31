@@ -1,4 +1,12 @@
-// App shell: tabs, zip ingestion, day grouping, and wiring the draft/export/history views.
+// App shell: tabs, zip ingestion, day grouping, and wiring the draft/export/history
+// views. Runs as one independent instance per album size (see ALBUM_SIZES) — each
+// gets its own New Album / Draft / History sub-tabs, cloned from the same <template>,
+// so adding a third size later is one more entry here, not a rewrite.
+
+const ALBUM_SIZES = [
+  { id: "30", cm: 30, label: "30×30 cm" },
+  { id: "20", cm: 20, label: "20×20 cm" },
+];
 
 const IMAGE_EXT = /\.(jpe?g|png|webp|gif|bmp|heic|heif)$/i;
 const HEIC_EXT = /\.(heic|heif)$/i;
@@ -8,62 +16,109 @@ const MIME_BY_EXT = {
   heic: "image/heic", heif: "image/heif",
 };
 
-let sourceDays = null; // [{ name, photos: [{name, url, blob}] }] — untouched, used to (re)build the project
-let project = null; // { title, days: [{ name, pages }] }
-let skippedFiles = [];
-
-// ---------- Tabs ----------
-document.querySelectorAll(".tab-btn").forEach((btn) => {
-  btn.addEventListener("click", () => switchTab(btn.dataset.tab));
+// ---------- Top-level size tabs ----------
+document.querySelectorAll(".size-tabs .tab-btn").forEach((btn) => {
+  btn.addEventListener("click", () => switchSize(btn.dataset.size));
 });
-function switchTab(name) {
-  document.querySelectorAll(".tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
-  document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("active", p.id === "tab-" + name));
-  if (name === "history") renderHistory();
+function switchSize(sizeId) {
+  document.querySelectorAll(".size-tabs .tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.size === sizeId));
+  document.querySelectorAll(".size-panel").forEach((p) => p.classList.toggle("active", p.dataset.sizePanel === sizeId));
+}
+
+// ---------- One context per size, cloned from the shared template ----------
+const sizePanelTemplate = document.getElementById("sizePanelTemplate");
+const sizePanelsRoot = document.getElementById("sizePanels");
+
+const sizeContexts = ALBUM_SIZES.map((size, i) => {
+  const panel = sizePanelTemplate.content.firstElementChild.cloneNode(true);
+  panel.dataset.sizePanel = size.id;
+  panel.classList.toggle("active", i === 0);
+  sizePanelsRoot.appendChild(panel);
+  return createSizeContext(size, panel);
+});
+
+function createSizeContext(size, panel) {
+  const el = (name) => panel.querySelector(`[data-el="${name}"]`);
+  const ctx = {
+    size, // { id, cm, label }
+    panel,
+    sourceDays: null, // [{ name, photos }] — untouched, used to (re)build the project
+    project: null, // { title, days: [{ name, pages }] }
+    skippedFiles: [],
+    spreadViewOn: false,
+    dropzone: el("dropzone"),
+    fileInput: el("fileInput"),
+    loadStatus: el("loadStatus"),
+    projectSetup: el("projectSetup"),
+    albumTitleInput: el("albumTitle"),
+    dayListEl: el("dayList"),
+    buildDraftBtn: el("buildDraftBtn"),
+    draftEmpty: el("draftEmpty"),
+    draftToolbar: el("draftToolbar"),
+    draftTitleEl: el("draftTitle"),
+    pagesEl: el("pages"),
+    rebuildBtn: el("rebuildBtn"),
+    approveBtn: el("approveBtn"),
+    spreadViewBtn: el("spreadViewBtn"),
+    historyEmpty: el("historyEmpty"),
+    historyList: el("historyList"),
+  };
+
+  panel.querySelectorAll(".subtabs .tab-btn").forEach((btn) => {
+    btn.addEventListener("click", () => switchSubtab(ctx, btn.dataset.subtab));
+  });
+
+  wireDropzone(ctx);
+  wireDraft(ctx);
+  wireExport(ctx);
+
+  renderHistory(ctx);
+  return ctx;
+}
+
+function switchSubtab(ctx, name) {
+  ctx.panel.querySelectorAll(".subtabs .tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.subtab === name));
+  ctx.panel.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("active", p.dataset.subpanel === name));
+  if (name === "history") renderHistory(ctx);
+}
+
+function setStatus(ctx, msg) {
+  ctx.loadStatus.hidden = false;
+  ctx.loadStatus.textContent = msg;
 }
 
 // ---------- Dropzone ----------
-const dropzone = document.getElementById("dropzone");
-const fileInput = document.getElementById("fileInput");
-const loadStatus = document.getElementById("loadStatus");
-const projectSetup = document.getElementById("projectSetup");
-const dayListEl = document.getElementById("dayList");
-const albumTitleInput = document.getElementById("albumTitle");
-
-dropzone.addEventListener("click", () => fileInput.click());
-fileInput.addEventListener("change", () => {
-  if (fileInput.files[0]) handleZipFile(fileInput.files[0]);
-});
-["dragenter", "dragover"].forEach((evt) =>
-  dropzone.addEventListener(evt, (e) => {
-    e.preventDefault();
-    dropzone.classList.add("drag");
-  })
-);
-["dragleave", "drop"].forEach((evt) =>
-  dropzone.addEventListener(evt, (e) => {
-    e.preventDefault();
-    dropzone.classList.remove("drag");
-  })
-);
-dropzone.addEventListener("drop", (e) => {
-  const f = e.dataTransfer.files[0];
-  if (f) handleZipFile(f);
-});
-
-function setStatus(msg) {
-  loadStatus.hidden = false;
-  loadStatus.textContent = msg;
+function wireDropzone(ctx) {
+  ctx.dropzone.addEventListener("click", () => ctx.fileInput.click());
+  ctx.fileInput.addEventListener("change", () => {
+    if (ctx.fileInput.files[0]) handleZipFile(ctx, ctx.fileInput.files[0]);
+  });
+  ["dragenter", "dragover"].forEach((evt) =>
+    ctx.dropzone.addEventListener(evt, (e) => {
+      e.preventDefault();
+      ctx.dropzone.classList.add("drag");
+    })
+  );
+  ["dragleave", "drop"].forEach((evt) =>
+    ctx.dropzone.addEventListener(evt, (e) => {
+      e.preventDefault();
+      ctx.dropzone.classList.remove("drag");
+    })
+  );
+  ctx.dropzone.addEventListener("drop", (e) => {
+    const f = e.dataTransfer.files[0];
+    if (f) handleZipFile(ctx, f);
+  });
 }
 
-async function handleZipFile(file) {
+async function handleZipFile(ctx, file) {
   if (!file.name.toLowerCase().endsWith(".zip")) {
-    setStatus("Please drop a .zip file.");
+    setStatus(ctx, "Please drop a .zip file.");
     return;
   }
-  projectSetup.hidden = true;
-  setStatus("Reading zip…");
-  skippedFiles = [];
+  ctx.projectSetup.hidden = true;
+  setStatus(ctx, "Reading zip…");
+  ctx.skippedFiles = [];
 
   try {
     const zip = await JSZip.loadAsync(file);
@@ -73,14 +128,14 @@ async function handleZipFile(file) {
       const base = relPath.split("/").pop();
       if (!base || base.startsWith(".") || relPath.includes("__MACOSX")) return;
       if (!IMAGE_EXT.test(base)) {
-        skippedFiles.push(relPath);
+        ctx.skippedFiles.push(relPath);
         return;
       }
       entries.push({ path: relPath, entry });
     });
 
     if (entries.length === 0) {
-      setStatus("No supported images (jpg/png/webp/gif/bmp/heic) found in that zip.");
+      setStatus(ctx, "No supported images (jpg/png/webp/gif/bmp/heic) found in that zip.");
       return;
     }
 
@@ -91,6 +146,7 @@ async function handleZipFile(file) {
       i++;
       const ext = path.split(".").pop().toLowerCase();
       setStatus(
+        ctx,
         heicCount > 0
           ? `Extracting & converting photos… ${i}/${entries.length}${HEIC_EXT.test(path) ? " (HEIC → JPEG)" : ""}`
           : `Extracting photo(s)… ${i}/${entries.length}`
@@ -109,7 +165,7 @@ async function handleZipFile(file) {
             blob = new Blob([buf], { type: "image/jpeg" });
           } else {
             console.warn("HEIC conversion failed for", path, err);
-            skippedFiles.push(path + " (unreadable HEIC — couldn't be converted)");
+            ctx.skippedFiles.push(path + " (unreadable HEIC — couldn't be converted)");
             continue;
           }
         }
@@ -117,17 +173,17 @@ async function handleZipFile(file) {
       loaded.push({ segments: path.split("/").filter(Boolean), blob });
     }
 
-    sourceDays = groupByDay(loaded);
-    await classifyPhotoShapes(sourceDays);
-    renderDayList(sourceDays);
+    ctx.sourceDays = groupByDay(loaded);
+    await classifyPhotoShapes(ctx, ctx.sourceDays);
+    renderDayList(ctx, ctx.sourceDays);
     const title = file.name.replace(/\.zip$/i, "");
-    albumTitleInput.value = title;
-    projectSetup.hidden = false;
-    const extra = skippedFiles.length ? ` (${skippedFiles.length} non-image file(s) skipped)` : "";
-    setStatus(`Loaded ${loaded.length} photo(s) across ${sourceDays.length} day(s).${extra}`);
+    ctx.albumTitleInput.value = title;
+    ctx.projectSetup.hidden = false;
+    const extra = ctx.skippedFiles.length ? ` (${ctx.skippedFiles.length} non-image file(s) skipped)` : "";
+    setStatus(ctx, `Loaded ${loaded.length} photo(s) across ${ctx.sourceDays.length} day(s).${extra}`);
   } catch (err) {
     console.error(err);
-    setStatus("Could not read that zip: " + err.message);
+    setStatus(ctx, "Could not read that zip: " + err.message);
   }
 }
 
@@ -135,6 +191,7 @@ async function handleZipFile(file) {
 // Strips a common single wrapping folder (e.g. the zip's own top folder) if present,
 // then uses the first remaining path segment as the day name. Flat zips (no day
 // folders) become a single day named after the last stripped wrapper, or "Day 1".
+// Pure — shared by every size context.
 function groupByDay(loaded) {
   let items = loaded.map((l) => ({ segs: l.segments.slice(), blob: l.blob }));
   let lastWrapper = null;
@@ -172,13 +229,13 @@ function groupByDay(loaded) {
 // Reads each photo's real (post-EXIF-rotation) dimensions so the layout engine can
 // match landscape/portrait/square photos to similarly-shaped grid cells instead of
 // just dropping them in left-to-right order.
-async function classifyPhotoShapes(days) {
+async function classifyPhotoShapes(ctx, days) {
   const total = days.reduce((n, d) => n + d.photos.length, 0);
   let done = 0;
   for (const day of days) {
     for (const photo of day.photos) {
       done++;
-      setStatus(`Checking photo shapes… ${done}/${total}`);
+      setStatus(ctx, `Checking photo shapes… ${done}/${total}`);
       try {
         const img = await loadImage(photo.url);
         photo.width = img.naturalWidth;
@@ -191,8 +248,8 @@ async function classifyPhotoShapes(days) {
   }
 }
 
-function renderDayList(days) {
-  dayListEl.innerHTML = "";
+function renderDayList(ctx, days) {
+  ctx.dayListEl.innerHTML = "";
   days.forEach((day) => {
     const li = document.createElement("li");
     const name = document.createElement("span");
@@ -202,93 +259,88 @@ function renderDayList(days) {
     count.textContent = `${day.photos.length} photo${day.photos.length === 1 ? "" : "s"}`;
     li.appendChild(name);
     li.appendChild(count);
-    dayListEl.appendChild(li);
+    ctx.dayListEl.appendChild(li);
   });
 }
 
 // ---------- Draft ----------
-const buildDraftBtn = document.getElementById("buildDraftBtn");
-const draftEmpty = document.getElementById("draftEmpty");
-const draftToolbar = document.getElementById("draftToolbar");
-const draftTitleEl = document.getElementById("draftTitle");
-const pagesEl = document.getElementById("pages");
-const rebuildBtn = document.getElementById("rebuildBtn");
-const approveBtn = document.getElementById("approveBtn");
-const spreadViewBtn = document.getElementById("spreadViewBtn");
+function wireDraft(ctx) {
+  ctx.buildDraftBtn.addEventListener("click", () => {
+    if (!ctx.sourceDays) return;
+    buildProject(ctx);
+    switchSubtab(ctx, "draft");
+  });
 
-buildDraftBtn.addEventListener("click", () => {
-  if (!sourceDays) return;
-  buildProject();
-  switchTab("draft");
-});
+  ctx.rebuildBtn.addEventListener("click", () => {
+    if (!ctx.sourceDays) return;
+    buildProject(ctx);
+  });
 
-function buildProject() {
-  const title = albumTitleInput.value.trim() || "Trip Album";
-  const planned = planProject(sourceDays.map((d) => ({ name: d.name, photos: d.photos.slice() })));
-  project = {
+  ctx.spreadViewBtn.addEventListener("click", () => {
+    if (!ctx.project) return;
+    ctx.spreadViewOn = !ctx.spreadViewOn;
+    ctx.spreadViewBtn.textContent = ctx.spreadViewOn ? "Single page view" : "Spread view";
+    ctx.spreadViewBtn.classList.toggle("active", ctx.spreadViewOn);
+    setSpreadView(ctx.spreadViewOn, ctx.project, ctx.pagesEl);
+  });
+}
+
+function buildProject(ctx) {
+  const title = ctx.albumTitleInput.value.trim() || "Trip Album";
+  const planned = planProject(ctx.sourceDays.map((d) => ({ name: d.name, photos: d.photos.slice() })));
+  ctx.project = {
     title,
     days: planned.map((p) => ({ name: p.dayName, pages: p.pages })),
   };
-  draftEmpty.hidden = true;
-  draftToolbar.hidden = false;
-  draftTitleEl.textContent = project.title;
-  renderDraft(project, pagesEl);
+  ctx.draftEmpty.hidden = true;
+  ctx.draftToolbar.hidden = false;
+  ctx.draftTitleEl.textContent = ctx.project.title;
+  renderDraft(ctx.project, ctx.pagesEl);
 }
 
-rebuildBtn.addEventListener("click", () => {
-  if (!sourceDays) return;
-  buildProject();
-});
-
-let spreadViewOn = false;
-spreadViewBtn.addEventListener("click", () => {
-  if (!project) return;
-  spreadViewOn = !spreadViewOn;
-  spreadViewBtn.textContent = spreadViewOn ? "Single page view" : "Spread view";
-  spreadViewBtn.classList.toggle("active", spreadViewOn);
-  setSpreadView(spreadViewOn, project, pagesEl);
-});
-
 // ---------- Export ----------
-const overlay = document.getElementById("exportOverlay");
+const overlay = document.getElementById("exportOverlay"); // shared: only one export runs at a time
 const exportMsg = document.getElementById("exportMsg");
 
-approveBtn.addEventListener("click", async () => {
-  if (!project) return;
-  overlay.hidden = false;
-  exportMsg.textContent = "Rendering pages…";
-  approveBtn.disabled = true;
-  try {
-    const { bytes, thumbnailDataUrl } = await exportPdf(project, project.title, (done, total) => {
-      exportMsg.textContent = `Rendering pages… ${done}/${total}`;
-    });
-    const pdfBlob = new Blob([bytes], { type: "application/pdf" });
+function wireExport(ctx) {
+  ctx.approveBtn.addEventListener("click", async () => {
+    if (!ctx.project) return;
+    overlay.hidden = false;
+    exportMsg.textContent = "Rendering pages…";
+    ctx.approveBtn.disabled = true;
+    try {
+      const { bytes, thumbnailDataUrl } = await exportPdf(ctx.project, ctx.project.title, ctx.size.cm, (done, total) => {
+        exportMsg.textContent = `Rendering pages… ${done}/${total}`;
+      });
+      const pdfBlob = new Blob([bytes], { type: "application/pdf" });
 
-    const pageCount = project.days.reduce((n, d) => n + d.pages.length, 0) + 1;
-    const record = {
-      id: "album-" + Date.now(),
-      title: project.title,
-      createdAt: Date.now(),
-      dayCount: project.days.length,
-      pageCount,
-      thumbnail: thumbnailDataUrl,
-      pdfBlob,
-    };
-    await AlbumDB.add(record);
-    downloadBlob(pdfBlob, sanitizeFileName(project.title) + ".pdf");
-    exportMsg.textContent = "Done! PDF downloaded and saved to History.";
-    setTimeout(() => {
-      overlay.hidden = true;
-      switchTab("history");
-    }, 900);
-  } catch (err) {
-    console.error(err);
-    exportMsg.textContent = "Export failed: " + err.message;
-    setTimeout(() => (overlay.hidden = true), 2000);
-  } finally {
-    approveBtn.disabled = false;
-  }
-});
+      const pageCount = ctx.project.days.reduce((n, d) => n + d.pages.length, 0) + 1;
+      const record = {
+        id: "album-" + Date.now(),
+        title: ctx.project.title,
+        createdAt: Date.now(),
+        dayCount: ctx.project.days.length,
+        pageCount,
+        sizeCm: ctx.size.cm,
+        thumbnail: thumbnailDataUrl,
+        pdfBlob,
+      };
+      await AlbumDB.add(record);
+      downloadBlob(pdfBlob, sanitizeFileName(ctx.project.title) + ".pdf");
+      exportMsg.textContent = "Done! PDF downloaded and saved to History.";
+      setTimeout(() => {
+        overlay.hidden = true;
+        switchSubtab(ctx, "history");
+      }, 900);
+    } catch (err) {
+      console.error(err);
+      exportMsg.textContent = "Export failed: " + err.message;
+      setTimeout(() => (overlay.hidden = true), 2000);
+    } finally {
+      ctx.approveBtn.disabled = false;
+    }
+  });
+}
 
 function sanitizeFileName(name) {
   return name.replace(/[\\/:*?"<>|]+/g, "_").trim() || "album";
@@ -306,13 +358,13 @@ function downloadBlob(blob, filename) {
 }
 
 // ---------- History ----------
-const historyEmpty = document.getElementById("historyEmpty");
-const historyList = document.getElementById("historyList");
-
-async function renderHistory() {
-  const records = await AlbumDB.all();
-  historyList.innerHTML = "";
-  historyEmpty.hidden = records.length > 0;
+// One shared IndexedDB store, filtered per size (older records saved before sizeCm
+// existed are treated as 30cm, since that was the only size at the time).
+async function renderHistory(ctx) {
+  const all = await AlbumDB.all();
+  const records = all.filter((r) => (r.sizeCm ?? 30) === ctx.size.cm);
+  ctx.historyList.innerHTML = "";
+  ctx.historyEmpty.hidden = records.length > 0;
   for (const r of records) {
     const li = document.createElement("li");
     li.className = "history-item";
@@ -345,12 +397,10 @@ async function renderHistory() {
     delBtn.textContent = "Delete";
     delBtn.addEventListener("click", async () => {
       await AlbumDB.remove(r.id);
-      renderHistory();
+      renderHistory(ctx);
     });
     li.appendChild(delBtn);
 
-    historyList.appendChild(li);
+    ctx.historyList.appendChild(li);
   }
 }
-
-renderHistory();

@@ -50,6 +50,15 @@ html, body {
 .tab-btn:hover:not(.active) { background: var(--cell-bg); }
 
 main { flex: 1; display: flex; }
+.size-panel { display: none; width: 100%; }
+.size-panel.active { display: block; }
+.subtabs {
+  padding: 10px 24px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+.subtabs .tab-btn { font-size: 13px; padding: 6px 14px; }
+.subtabs .tab-btn.active { background: var(--ink); }
 .tab-panel { display: none; width: 100%; }
 .tab-panel.active { display: block; }
 .panel-inner { max-width: 1000px; margin: 0 auto; padding: 32px 24px 80px; }

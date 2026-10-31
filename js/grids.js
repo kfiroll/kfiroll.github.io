@@ -1,6 +1,6 @@
-// Grid layouts extracted from Grid_Design.pdf (30x30cm square page, 850.39pt).
-// Coordinates are fractions of page width/height (0-1), cells in reading order.
-const PAGE_SIZE_PT = 850.3939819335938;
+// Grid layouts extracted from Grid_Design.pdf (originally a 30x30cm square page).
+// Coordinates are fractions of page width/height (0-1), cells in reading order — so
+// this same data works at any physical page size (see pdf-export.js's pageSizePt()).
 const GRIDS = [
   {
     "id": "L1",
