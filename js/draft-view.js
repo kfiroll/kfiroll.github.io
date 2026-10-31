@@ -35,9 +35,11 @@ function renderSingleMode(project, containerEl) {
   });
 }
 
-// Two pages per row, in the same global left-right order the layout engine itself
-// used to decide which layouts can't repeat — so what you see paired here is exactly
-// what will face each other in the printed book.
+// Two pages per row, in the same global page-pairing the layout engine itself used to
+// decide which layouts can't repeat — so what's paired here is exactly what will face
+// each other in the printed book. This is a Hebrew album: the book reads right to
+// left, so within each spread the earlier (lower-numbered) page sits on the right and
+// the later one on the left — the opposite of a Western left-to-right book.
 function renderSpreadMode(project, containerEl) {
   const flat = [];
   project.days.forEach((day, dayIdx) => {
@@ -48,17 +50,21 @@ function renderSpreadMode(project, containerEl) {
     const row = document.createElement("div");
     row.className = "spread-row";
 
-    const left = flat[i];
-    const leftWrap = buildPageWrap(project, containerEl, left.day, left.dayIdx, left.page, left.pageIdx, i + 1, left.day.name);
-    leftWrap.classList.add("spread-page");
-    row.appendChild(leftWrap);
+    const earlier = flat[i];
+    const earlierWrap = buildPageWrap(project, containerEl, earlier.day, earlier.dayIdx, earlier.page, earlier.pageIdx, i + 1, earlier.day.name);
+    earlierWrap.classList.add("spread-page");
 
-    const right = flat[i + 1];
-    if (right) {
-      const rightWrap = buildPageWrap(project, containerEl, right.day, right.dayIdx, right.page, right.pageIdx, i + 2, right.day.name);
-      rightWrap.classList.add("spread-page");
-      row.appendChild(rightWrap);
+    const later = flat[i + 1];
+    let laterWrap = null;
+    if (later) {
+      laterWrap = buildPageWrap(project, containerEl, later.day, later.dayIdx, later.page, later.pageIdx, i + 2, later.day.name);
+      laterWrap.classList.add("spread-page");
     }
+
+    // Right-to-left: append the later page first (so it lands on screen-left), then
+    // the earlier page (screen-right) — mirroring a Hebrew book's page order.
+    if (laterWrap) row.appendChild(laterWrap);
+    row.appendChild(earlierWrap);
 
     containerEl.appendChild(row);
   }
