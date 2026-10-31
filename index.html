@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Trip Album Builder</title>
+<link rel="stylesheet" href="css/style.css?v=5" />
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">📷 Trip Album Builder</div>
+    <nav class="tabs">
+      <button class="tab-btn active" data-tab="new">New Album</button>
+      <button class="tab-btn" data-tab="draft">Draft</button>
+      <button class="tab-btn" data-tab="history">History</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- NEW ALBUM TAB -->
+    <section id="tab-new" class="tab-panel active">
+      <div class="panel-inner">
+        <div id="dropzone" class="dropzone">
+          <input type="file" id="fileInput" accept=".zip" hidden />
+          <div class="dz-icon">⬆️</div>
+          <div class="dz-text">Drop a ZIP of your trip photos here</div>
+          <div class="dz-sub">or click to browse &middot; folders inside the zip = days</div>
+        </div>
+
+        <div id="loadStatus" class="status-line" hidden></div>
+
+        <div id="projectSetup" class="project-setup" hidden>
+          <label class="field">
+            <span>Album title</span>
+            <input type="text" id="albumTitle" placeholder="e.g. Vietnam 2026" />
+          </label>
+
+          <h3>Days found</h3>
+          <ul id="dayList" class="day-list"></ul>
+
+          <button id="buildDraftBtn" class="primary-btn">Generate Draft →</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- DRAFT TAB -->
+    <section id="tab-draft" class="tab-panel">
+      <div class="panel-inner">
+        <div id="draftEmpty" class="empty-hint">
+          No draft yet. Go to <b>New Album</b> and drop a zip to generate one.
+        </div>
+        <div id="draftToolbar" class="draft-toolbar" hidden>
+          <div class="draft-title" id="draftTitle"></div>
+          <div class="draft-hint">Drag a photo onto another to swap places, or tap 🔍 to zoom/reposition it within its frame. Click the shaded cell on a day's first page to edit its caption, or tap "Aa" on any photo to move the text frame there.</div>
+          <div class="draft-actions">
+            <button id="rebuildBtn" class="ghost-btn">Reshuffle layouts</button>
+            <button id="approveBtn" class="primary-btn">Approve &amp; Export PDF (200 DPI)</button>
+          </div>
+        </div>
+        <div id="pages" class="pages"></div>
+      </div>
+    </section>
+
+    <!-- HISTORY TAB -->
+    <section id="tab-history" class="tab-panel">
+      <div class="panel-inner">
+        <div id="historyEmpty" class="empty-hint">No albums generated yet.</div>
+        <ul id="historyList" class="history-list"></ul>
+      </div>
+    </section>
+  </main>
+
+  <div id="exportOverlay" class="overlay" hidden>
+    <div class="overlay-box">
+      <div class="spinner"></div>
+      <div id="exportMsg">Rendering pages…</div>
+    </div>
+  </div>
+</div>
+
+<script src="vendor/jszip.min.js"></script>
+<script src="vendor/pdf-lib.min.js"></script>
+<script src="vendor/heic2any.min.js"></script>
+<script src="js/grids.js"></script>
+<script src="js/db.js"></script>
+<script src="js/layout-engine.js"></script>
+<script src="js/draft-view.js"></script>
+<script src="js/pdf-export.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
