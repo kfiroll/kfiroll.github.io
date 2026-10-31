@@ -220,17 +220,49 @@ function buildPhotoCell(cellEl, project, containerEl, day, page, cell, dayIdx, p
   cellEl.appendChild(zoomBtn);
 }
 
+// Editing happens in a centered overlay sized for comfortable dragging, not inside
+// the grid cell itself — a cell can be as short as ~100px on screen (thin layout
+// strips), which isn't enough room for both the photo and the slider/buttons, let
+// alone a visible, draggable image. The overlay shows the same photo at the same
+// crop (via the same computeCropRect math as the small cell and the PDF export), just
+// bigger; dragging there updates `cell.crop`, and `applyNow` keeps the small in-grid
+// thumbnail live-synced on every change so both match exactly once you hit Done.
 function openZoomEditor(cellEl, img, cell, geom, applyNow) {
-  if (cellEl.querySelector(".zoom-editor")) return; // already open
-  cellEl.classList.add("editing");
-  cellEl.draggable = false; // pointer-drag below is for panning, not cell-swap
+  if (document.querySelector(".zoom-modal-backdrop")) return; // already open
 
   cell.crop = cell.crop || { zoom: 1, x: 0.5, y: 0.5 };
 
-  const editor = document.createElement("div");
-  editor.className = "zoom-editor";
-  editor.addEventListener("click", (e) => e.stopPropagation());
-  editor.addEventListener("dragstart", (e) => e.preventDefault());
+  const backdrop = document.createElement("div");
+  backdrop.className = "zoom-modal-backdrop";
+  backdrop.addEventListener("click", (e) => {
+    if (e.target === backdrop) close();
+  });
+
+  const modal = document.createElement("div");
+  modal.className = "zoom-modal";
+  modal.addEventListener("click", (e) => e.stopPropagation());
+
+  const viewport = document.createElement("div");
+  viewport.className = "zoom-modal-viewport";
+  viewport.style.aspectRatio = `${geom.w} / ${geom.h}`;
+
+  const bigImg = document.createElement("img");
+  bigImg.src = cell.photo.url;
+  bigImg.draggable = false;
+  viewport.appendChild(bigImg);
+  modal.appendChild(viewport);
+
+  const applyBoth = () => {
+    applyCrop(bigImg, cell.photo, geom, cell.crop);
+    applyNow();
+  };
+  if (bigImg.complete) applyBoth();
+  else bigImg.addEventListener("load", applyBoth, { once: true });
+
+  const hint = document.createElement("div");
+  hint.className = "zoom-hint";
+  hint.textContent = "✥ Drag the photo to reposition it · slide to zoom";
+  modal.appendChild(hint);
 
   const slider = document.createElement("input");
   slider.type = "range";
@@ -241,9 +273,9 @@ function openZoomEditor(cellEl, img, cell, geom, applyNow) {
   slider.className = "zoom-slider";
   slider.addEventListener("input", () => {
     cell.crop.zoom = parseFloat(slider.value);
-    applyNow();
+    applyBoth();
   });
-  editor.appendChild(slider);
+  modal.appendChild(slider);
 
   const btnRow = document.createElement("div");
   btnRow.className = "zoom-btn-row";
@@ -254,42 +286,47 @@ function openZoomEditor(cellEl, img, cell, geom, applyNow) {
   resetBtn.addEventListener("click", () => {
     cell.crop = { zoom: 1, x: 0.5, y: 0.5 };
     slider.value = "1";
-    applyNow();
+    applyBoth();
   });
   btnRow.appendChild(resetBtn);
+
+  function close() {
+    backdrop.remove();
+    document.removeEventListener("keydown", onKey);
+  }
+  function onKey(e) {
+    if (e.key === "Escape") close();
+  }
+  document.addEventListener("keydown", onKey);
 
   const doneBtn = document.createElement("button");
   doneBtn.type = "button";
   doneBtn.textContent = "Done";
-  doneBtn.addEventListener("click", () => {
-    editor.remove();
-    cellEl.classList.remove("editing");
-    cellEl.draggable = true;
-  });
+  doneBtn.addEventListener("click", close);
   btnRow.appendChild(doneBtn);
 
-  editor.appendChild(btnRow);
-  cellEl.appendChild(editor);
+  modal.appendChild(btnRow);
+  backdrop.appendChild(modal);
+  document.body.appendChild(backdrop);
 
-  // Drag directly on the photo to pan it, while in edit mode.
+  // Drag directly on the enlarged photo to pan it.
   let dragging = false;
   let startPx = 0;
   let startPy = 0;
   let startCropX = 0;
   let startCropY = 0;
 
-  img.addEventListener("pointerdown", (e) => {
-    if (!cellEl.classList.contains("editing")) return;
+  bigImg.addEventListener("pointerdown", (e) => {
     dragging = true;
-    img.setPointerCapture(e.pointerId);
+    bigImg.setPointerCapture(e.pointerId);
     startPx = e.clientX;
     startPy = e.clientY;
     startCropX = cell.crop.x;
     startCropY = cell.crop.y;
   });
-  img.addEventListener("pointermove", (e) => {
+  bigImg.addEventListener("pointermove", (e) => {
     if (!dragging) return;
-    const rect = cellEl.getBoundingClientRect();
+    const rect = viewport.getBoundingClientRect();
     const { sw, sh } = computeCropRect(cell.photo.width, cell.photo.height, geom.w, geom.h, cell.crop);
     const scale = rect.width / sw; // screen px per image px
     const maxX = cell.photo.width - sw;
@@ -298,11 +335,11 @@ function openZoomEditor(cellEl, img, cell, geom, applyNow) {
     const dyImg = (e.clientY - startPy) / scale;
     cell.crop.x = maxX > 0 ? clamp01(startCropX - dxImg / maxX) : 0.5;
     cell.crop.y = maxY > 0 ? clamp01(startCropY - dyImg / maxY) : 0.5;
-    applyNow();
+    applyBoth();
   });
   const endDrag = () => (dragging = false);
-  img.addEventListener("pointerup", endDrag);
-  img.addEventListener("pointercancel", endDrag);
+  bigImg.addEventListener("pointerup", endDrag);
+  bigImg.addEventListener("pointercancel", endDrag);
 }
 
 function clamp01(v) {
