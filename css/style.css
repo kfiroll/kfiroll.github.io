@@ -156,9 +156,23 @@ main { flex: 1; display: flex; }
   letter-spacing: .04em;
 }
 
-.page-wrap { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 560px; max-width: 100%; }
-.page-label-row { display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 10px; }
-.page-label { font-size: 12px; color: var(--muted); }
+.page-wrap { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 560px; max-width: 100%; border-radius: 10px; transition: opacity 0.1s; }
+.page-wrap.dragging { opacity: 0.4; }
+.page-wrap.page-dragover { outline: 3px dashed var(--accent); outline-offset: 4px; }
+.page-label-row { display: flex; align-items: center; gap: 8px; width: 100%; }
+.page-drag-handle {
+  border: none;
+  background: var(--cell-bg);
+  color: var(--muted);
+  border-radius: 6px;
+  width: 24px;
+  height: 24px;
+  font-size: 13px;
+  cursor: grab;
+  flex-shrink: 0;
+}
+.page-drag-handle:hover { background: var(--line); color: var(--ink); }
+.page-label { font-size: 12px; color: var(--muted); flex: 1; }
 .layout-picker {
   font-size: 12px;
   padding: 3px 8px;
@@ -202,6 +216,20 @@ main { flex: 1; display: flex; }
 .spread-mode .page { width: 100%; height: auto; }
 .spread-row .spread-page:first-child .page { box-shadow: inset -10px 0 14px -10px rgba(0, 0, 0, 0.3); }
 .spread-row .spread-page:last-child .page { box-shadow: inset 10px 0 14px -10px rgba(0, 0, 0, 0.3); }
+.flip-spread-btn {
+  flex: 0 0 auto;
+  align-self: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 14px;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+}
+.flip-spread-btn:hover { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 
 #spreadViewBtn.active { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 
@@ -289,6 +317,22 @@ main { flex: 1; display: flex; }
 }
 .zoom-hint { color: var(--muted); font-size: 12px; text-align: center; }
 .zoom-slider { width: 100%; accent-color: var(--accent); }
+
+.nudge-pad { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.nudge-mid-row { display: flex; gap: 32px; }
+.nudge-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--cell-bg);
+  color: var(--ink);
+  font-size: 13px;
+  cursor: pointer;
+}
+.nudge-btn:hover { background: var(--line); }
+.nudge-btn:active { background: var(--accent); color: var(--accent-ink); }
+
 .zoom-btn-row { display: flex; justify-content: space-between; gap: 10px; }
 .zoom-btn-row button {
   flex: 1;
@@ -302,6 +346,7 @@ main { flex: 1; display: flex; }
   color: var(--ink);
 }
 .zoom-btn-row button:last-child { background: var(--accent); color: var(--accent-ink); }
+.zoom-btn-row button.active { background: var(--accent); color: var(--accent-ink); }
 
 .cell.text-cell {
   background: var(--text-slot);

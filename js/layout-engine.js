@@ -41,8 +41,13 @@ GRIDS.forEach((g) => {
   const firstCap = g.cellCount - 1;
   if (firstCap > 0) (FIRST_CAPACITY_GROUPS[firstCap] ||= []).push(g);
 });
-const FIRST_CAPS = Object.keys(FIRST_CAPACITY_GROUPS).map(Number); // e.g. [4,5,6,7,8]
-const NONFIRST_CAPS = Object.keys(NONFIRST_CAPACITY_GROUPS).map(Number); // e.g. [5,6,7,8,9]
+const FIRST_CAPS = Object.keys(FIRST_CAPACITY_GROUPS).map(Number); // e.g. [1,2,3,4,5,6,7,8]
+const NONFIRST_CAPS = Object.keys(NONFIRST_CAPACITY_GROUPS).map(Number); // e.g. [1,2,3,4,5,6,7,8,9]
+// The smallest capacity in each range — not hardcoded, because adding a smaller grid
+// (e.g. a 1 or 2-photo layout) should lower these automatically rather than silently
+// staying stuck at whatever the minimum used to be.
+const MIN_FIRST_CAP = Math.min(...FIRST_CAPS);
+const MIN_NONFIRST_CAP = Math.min(...NONFIRST_CAPS);
 
 // Assigns a fixed set of photos to a grid's cells — same photos, same page, but
 // matched to each cell's shape (landscape cell <- landscape photo, etc.) instead of
@@ -111,10 +116,10 @@ function planProject(days) {
 
     const isFirst = remaining === dayLens[dayIdx];
 
-    if (remaining < 4) {
+    if (remaining < MIN_FIRST_CAP) {
       // Degenerate day: not enough photos for any template's smallest photo capacity.
       // One page, best-effort — the only case where blank cells are unavoidable.
-      const grid = FIRST_CAPACITY_GROUPS[Math.min(...FIRST_CAPS)][0];
+      const grid = FIRST_CAPACITY_GROUPS[MIN_FIRST_CAP][0];
       const collision = parity === 1 && grid.id === prevId ? 1 : 0;
       const sub = solve(dayIdx, 0, (parity + 1) % 2, grid.id);
       return { cost: collision + sub.cost, steps: [{ dayIdx, cap: remaining, grid, isFirst }, ...sub.steps] };
@@ -130,7 +135,7 @@ function planProject(days) {
     for (const cap of capRange) {
       if (cap > remaining) continue;
       const leftover = remaining - cap;
-      if (leftover !== 0 && leftover < 5) continue; // would strand < 5 photos
+      if (leftover !== 0 && leftover < MIN_NONFIRST_CAP) continue; // would strand leftover photos
       for (const grid of groups[cap]) {
         const collision = parity === 1 && grid.id === prevId ? 1 : 0;
         const sub = solve(dayIdx, leftover, (parity + 1) % 2, grid.id);
@@ -165,8 +170,8 @@ function planProject(days) {
 // layout the user picked by hand.
 function solveTail(remaining, parity, prevId, memo) {
   if (remaining === 0) return { cost: 0, steps: [] };
-  if (remaining < 5) {
-    const grid = NONFIRST_CAPACITY_GROUPS[Math.min(...NONFIRST_CAPS)][0];
+  if (remaining < MIN_NONFIRST_CAP) {
+    const grid = NONFIRST_CAPACITY_GROUPS[MIN_NONFIRST_CAP][0];
     const collision = parity === 1 && grid.id === prevId ? 1 : 0;
     return { cost: collision, steps: [{ cap: remaining, grid, isFirst: false }] };
   }
@@ -178,7 +183,7 @@ function solveTail(remaining, parity, prevId, memo) {
   for (const cap of NONFIRST_CAPS) {
     if (cap > remaining) continue;
     const leftover = remaining - cap;
-    if (leftover !== 0 && leftover < 5) continue;
+    if (leftover !== 0 && leftover < MIN_NONFIRST_CAP) continue;
     for (const grid of NONFIRST_CAPACITY_GROUPS[cap]) {
       const collision = parity === 1 && grid.id === prevId ? 1 : 0;
       const sub = solveTail(leftover, (parity + 1) % 2, grid.id, memo);
@@ -270,8 +275,8 @@ function prevPageLayoutId(project, dayIdx, pageIdx) {
 function solveDayFrom(photosLength, isFirstPage, parity, prevId) {
   if (!isFirstPage) return solveTail(photosLength, parity, prevId, new Map());
 
-  if (photosLength < 4) {
-    const grid = FIRST_CAPACITY_GROUPS[Math.min(...FIRST_CAPS)][0];
+  if (photosLength < MIN_FIRST_CAP) {
+    const grid = FIRST_CAPACITY_GROUPS[MIN_FIRST_CAP][0];
     const collision = parity === 1 && grid.id === prevId ? 1 : 0;
     return { cost: collision, steps: [{ cap: photosLength, grid, isFirst: true }] };
   }
@@ -280,7 +285,7 @@ function solveDayFrom(photosLength, isFirstPage, parity, prevId) {
   for (const cap of FIRST_CAPS) {
     if (cap > photosLength) continue;
     const leftover = photosLength - cap;
-    if (leftover !== 0 && leftover < 5) continue;
+    if (leftover !== 0 && leftover < MIN_NONFIRST_CAP) continue;
     for (const grid of FIRST_CAPACITY_GROUPS[cap]) {
       const collision = parity === 1 && grid.id === prevId ? 1 : 0;
       const sub = solveTail(leftover, (parity + 1) % 2, grid.id, new Map());
@@ -330,4 +335,18 @@ function deletePhoto(project, dayIdx, pageIdx, cellIdx) {
     newPages.push(built);
   });
   day.pages = newPages;
+}
+
+// Exchanges the positions of two pages — possibly in different days. Used both for
+// "flip this spread" (swap its left and right page) and for drag-to-reorder (drop a
+// page onto another to swap them, same gesture as swapping two photos). A manual
+// swap is always honored even if it happens to create a same-layout spread or move a
+// page out of chronological order — that's the user's deliberate call, same as every
+// other manual override in this file. Mutates `project` in place.
+function swapPages(project, a, b) {
+  const dayA = project.days[a.dayIdx];
+  const dayB = project.days[b.dayIdx];
+  const tmp = dayA.pages[a.pageIdx];
+  dayA.pages[a.pageIdx] = dayB.pages[b.pageIdx];
+  dayB.pages[b.pageIdx] = tmp;
 }

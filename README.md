@@ -10,16 +10,22 @@ draft you can edit, approve, and export.
 
 0. **Pick a size.** Two top-level tabs — 30×30 cm and 20×20 cm — each with its
    own independent New Album / Draft / History flow and its own History list.
-   Same 10 templates at both sizes (the grid is stored as 0-1 fractions of the
+   Same 16 templates at both sizes (the grid is stored as 0-1 fractions of the
    page, not fixed measurements, so it's physical-size-agnostic — see below).
 1. **Drop a zip.** Folders inside it = days (`Day 1 - Hanoi/`, `Day 2 - Halong Bay/`, ...).
-2. **It builds a draft.** Every photo is laid out onto one of 10 fixed grid
-   templates (traced from an actual print-shop template PDF, `Grid_Design.pdf`),
-   filling every cell with a photo except one reserved text frame per
-   day. No photo is ever left out, no cell is ever left blank except that one.
+2. **It builds a draft.** Every photo is laid out onto one of 16 fixed grid
+   templates — 10 traced from an actual print-shop template PDF
+   (`Grid_Design.pdf`), plus 6 simple hand-authored "picture count" layouts
+   (1 full page; 2 as tall columns or wide rows; 3 as tall columns; 4 as a
+   2×2 grid or wide rows) matching the same margins — filling every
+   cell with a photo except one reserved text frame per day. No photo is
+   ever left out, no cell is ever left blank except that one.
 3. **You edit the draft.** Drag photos to swap them, change a page's layout,
-   move the text frame to a different cell, zoom/pan within any frame, delete
-   a photo, preview as two-page spreads (right-to-left, for a Hebrew book).
+   move the text frame to a different cell, zoom/pan/flip within any frame
+   (plus fine arrow-key nudging for precise positioning), delete a photo,
+   drag whole pages to reorder them, preview as two-page spreads (right-to-
+   left, for a Hebrew book) with a one-click button to swap a spread's left
+   and right page.
 4. **Approve → export.** Renders every page to a canvas at exactly 200 DPI for
    the selected size (2362×2362px at 30cm, 1575×1575px at 20cm) and assembles
    a PDF with pdf-lib. Saved to that size's own History
@@ -33,18 +39,24 @@ draft you can edit, approve, and export.
 - **Nothing leaves the browser.** Zip parsing, HEIC→JPEG conversion, layout,
   rendering, and PDF assembly all happen client-side. Photos never touch a
   server — which is also why this is safe to host publicly on GitHub Pages.
-- **The grid is the constraint, not a suggestion.** The 10 templates came from
-  measuring an actual PDF (`Grid_Design.pdf`), not invented. Every layout
-  decision works *within* those 10 shapes rather than generating new ones.
+- **The grid is the constraint, not a suggestion.** 10 of the 16 templates
+  came from measuring an actual PDF (`Grid_Design.pdf`), not invented; the
+  other 6 are simple picture-count layouts added later, built to the same
+  margin convention. Every layout decision works *within* those shapes
+  rather than generating new ones.
 
 ## The layout algorithm (the interesting part)
 
 This is the part worth reusing. Three rules, all enforced together:
 
 1. **Every page fully filled** — no blank photo cells except the one text
-   frame per day. Given 10 templates with fixed cell counts (5–9 photos
-   each), picking a page size is really a bin-packing problem: find a
-   sequence of template capacities that sums exactly to a day's photo count.
+   frame per day. Given a fixed set of templates with known cell counts
+   (1–9 photos each), picking a page size is really a bin-packing problem:
+   find a sequence of template capacities that sums exactly to a day's
+   photo count. (The minimum capacity isn't hardcoded anywhere — it's
+   derived from whatever's in `GRIDS`, so adding a smaller template, like
+   the 1-photo layout, automatically fixes edge cases like "a day with only
+   2 photos" instead of needing a separate code change.)
 2. **Two-page spreads never repeat a layout.** The book is planned as one
    continuous sequence of spreads (page pairs), not day-by-day, because a
    day boundary can fall in the middle of a spread. Some photo counts (e.g.

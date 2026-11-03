@@ -479,5 +479,66 @@ const GRIDS = [
         "h": 0.27493
       }
     ]
+  },
+  // Hand-authored simple "picture-count" layouts (1 full page; 2 tall columns or
+  // 2 wide rows; 3 tall columns; a 2x2 grid or 4 wide rows), matching the same
+  // ~7.4% margin / ~1.8% gutter convention measured from Grid_Design.pdf.
+  {
+    "id": "L11",
+    "cellCount": 1,
+    "defaultTextSlot": null,
+    "cells": [
+      { "x": 0.074, "y": 0.074, "w": 0.852, "h": 0.852 }
+    ]
+  },
+  {
+    "id": "L12",
+    "cellCount": 2,
+    "defaultTextSlot": 0,
+    "cells": [
+      { "x": 0.074, "y": 0.074, "w": 0.4168, "h": 0.852 },
+      { "x": 0.5092, "y": 0.074, "w": 0.4168, "h": 0.852 }
+    ]
+  },
+  {
+    "id": "L13",
+    "cellCount": 3,
+    "defaultTextSlot": 0,
+    "cells": [
+      { "x": 0.074, "y": 0.074, "w": 0.27173, "h": 0.852 },
+      { "x": 0.36413, "y": 0.074, "w": 0.27173, "h": 0.852 },
+      { "x": 0.65426, "y": 0.074, "w": 0.27173, "h": 0.852 }
+    ]
+  },
+  {
+    "id": "L14",
+    "cellCount": 4,
+    "defaultTextSlot": 0,
+    "cells": [
+      { "x": 0.074, "y": 0.074, "w": 0.4168, "h": 0.4168 },
+      { "x": 0.5092, "y": 0.074, "w": 0.4168, "h": 0.4168 },
+      { "x": 0.074, "y": 0.5092, "w": 0.4168, "h": 0.4168 },
+      { "x": 0.5092, "y": 0.5092, "w": 0.4168, "h": 0.4168 }
+    ]
+  },
+  {
+    "id": "L15",
+    "cellCount": 2,
+    "defaultTextSlot": 0,
+    "cells": [
+      { "x": 0.074, "y": 0.074, "w": 0.852, "h": 0.4168 },
+      { "x": 0.074, "y": 0.5092, "w": 0.852, "h": 0.4168 }
+    ]
+  },
+  {
+    "id": "L16",
+    "cellCount": 4,
+    "defaultTextSlot": 0,
+    "cells": [
+      { "x": 0.074, "y": 0.074, "w": 0.852, "h": 0.1992 },
+      { "x": 0.074, "y": 0.2916, "w": 0.852, "h": 0.1992 },
+      { "x": 0.074, "y": 0.5092, "w": 0.852, "h": 0.1992 },
+      { "x": 0.074, "y": 0.7268, "w": 0.852, "h": 0.1992 }
+    ]
   }
 ];

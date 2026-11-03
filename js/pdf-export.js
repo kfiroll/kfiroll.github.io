@@ -52,7 +52,18 @@ function computeCropRect(imgW, imgH, dw, dh, crop) {
 
 function drawCover(ctx, img, dx, dy, dw, dh, crop) {
   const { sx, sy, sw, sh } = computeCropRect(img.width, img.height, dw, dh, crop);
-  ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh);
+  if (crop && crop.flipH) {
+    // Mirror the output rect, not the source image before cropping — matches the
+    // draft preview's approach (flip the crop-frame, not the raw <img>), so sx/sy/sw/sh
+    // (computed the normal, unflipped way) still describe exactly what shows up.
+    ctx.save();
+    ctx.translate(dx + dw, dy);
+    ctx.scale(-1, 1);
+    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, dw, dh);
+    ctx.restore();
+  } else {
+    ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh);
+  }
 }
 
 function wrapText(ctx, text, maxWidth) {

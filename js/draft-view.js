@@ -4,6 +4,8 @@
 // deletion, a page-number stamp, and a two-page spread view.
 
 let dragSource = null; // { dayIdx, pageIdx, cellIdx }
+let pageDragSource = null; // { dayIdx, pageIdx } — separate from dragSource so dragging
+// a whole page and dragging a single photo can never be confused for each other.
 let spreadView = false;
 
 function setSpreadView(on, project, containerEl) {
@@ -63,7 +65,19 @@ function renderSpreadMode(project, containerEl) {
 
     // Right-to-left: append the later page first (so it lands on screen-left), then
     // the earlier page (screen-right) — mirroring a Hebrew book's page order.
-    if (laterWrap) row.appendChild(laterWrap);
+    if (laterWrap) {
+      row.appendChild(laterWrap);
+      const flipBtn = document.createElement("button");
+      flipBtn.type = "button";
+      flipBtn.className = "flip-spread-btn";
+      flipBtn.title = "Swap the left and right pages of this spread";
+      flipBtn.textContent = "⇄";
+      flipBtn.addEventListener("click", () => {
+        swapPages(project, { dayIdx: earlier.dayIdx, pageIdx: earlier.pageIdx }, { dayIdx: later.dayIdx, pageIdx: later.pageIdx });
+        renderDraft(project, containerEl);
+      });
+      row.appendChild(flipBtn);
+    }
     row.appendChild(earlierWrap);
 
     containerEl.appendChild(row);
@@ -74,21 +88,55 @@ function buildPageWrap(project, containerEl, day, dayIdx, page, pageIdx, globalP
   const wrap = document.createElement("div");
   wrap.className = "page-wrap";
 
+  // Whole-page reordering: grab the handle to drag this page onto another one,
+  // anywhere in the book, to swap their positions — same swap gesture as photos.
+  wrap.addEventListener("dragover", (e) => {
+    if (!pageDragSource) return;
+    e.preventDefault();
+    wrap.classList.add("page-dragover");
+  });
+  wrap.addEventListener("dragleave", () => wrap.classList.remove("page-dragover"));
+  wrap.addEventListener("drop", (e) => {
+    if (!pageDragSource) return;
+    e.preventDefault();
+    wrap.classList.remove("page-dragover");
+    swapPages(project, pageDragSource, { dayIdx, pageIdx });
+    pageDragSource = null;
+    renderDraft(project, containerEl);
+  });
+
   const labelRow = document.createElement("div");
   labelRow.className = "page-label-row";
+
+  const handle = document.createElement("button");
+  handle.type = "button";
+  handle.className = "page-drag-handle";
+  handle.title = "Drag to reorder this page";
+  handle.textContent = "⠿";
+  handle.draggable = true;
+  handle.addEventListener("dragstart", (e) => {
+    pageDragSource = { dayIdx, pageIdx };
+    wrap.classList.add("dragging");
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", "");
+  });
+  handle.addEventListener("dragend", () => wrap.classList.remove("dragging"));
+  labelRow.appendChild(handle);
 
   const label = document.createElement("div");
   label.className = "page-label";
   label.textContent = labelText;
   labelRow.appendChild(label);
 
+  const isTextPage = page.textSlot != null;
   const layoutPicker = document.createElement("select");
   layoutPicker.className = "layout-picker";
   layoutPicker.title = "Change this page's layout";
   GRIDS.forEach((g) => {
+    if (isTextPage && g.cellCount - 1 <= 0) return; // no room left for the text frame on this layout
     const opt = document.createElement("option");
     opt.value = g.id;
-    opt.textContent = `${g.id} (${g.cellCount} photos)`;
+    opt.textContent = `${g.id} (${g.cellCount} photo${g.cellCount === 1 ? "" : "s"})`;
     if (g.id === page.layoutId) opt.selected = true;
     layoutPicker.appendChild(opt);
   });
@@ -144,9 +192,17 @@ function buildPageWrap(project, containerEl, day, dayIdx, page, pageIdx, globalP
   return wrap;
 }
 
-// Sizes/positions the <img> inside its (overflow-hidden) cell to match the crop
-// rectangle computed by computeCropRect — purely with percentages, so it stays
-// correct at any responsive page size with no pixel measurement needed.
+// Sizes/positions the <img> inside its crop-frame wrapper to match the crop rectangle
+// computed by computeCropRect — purely with percentages, so it stays correct at any
+// responsive page size with no pixel measurement needed. The flip and the position
+// are one combined `transform` on the img itself (translate listed before scaleX): per
+// the CSS transform spec, functions apply right-to-left, so scaleX(-1) mirrors the
+// image in place around its own center *first*, then translate slides that already-
+// mirrored content into the crop position — matching pdf-export.js's canvas flip,
+// which likewise mirrors the output rather than the source image before cropping.
+// (An earlier version flipped a separate wrapper div instead; some combination of
+// nested transform contexts and this cell's overflow:hidden made the image disappear
+// entirely in testing, so this sticks to one transform on one element.)
 function applyCrop(img, photo, geom, crop) {
   if (!photo.width || !photo.height) {
     img.style.width = "100%";
@@ -159,7 +215,8 @@ function applyCrop(img, photo, geom, crop) {
   img.style.objectFit = "";
   img.style.width = (photo.width / sw) * 100 + "%";
   img.style.height = (photo.height / sh) * 100 + "%";
-  img.style.transform = `translate(${-(sx / photo.width) * 100}%, ${-(sy / photo.height) * 100}%)`;
+  const translatePart = `translate(${-(sx / photo.width) * 100}%, ${-(sy / photo.height) * 100}%)`;
+  img.style.transform = crop && crop.flipH ? `${translatePart} scaleX(-1)` : translatePart;
 }
 
 function buildPhotoCell(cellEl, project, containerEl, day, page, cell, dayIdx, pageIdx, cellIdx, geom) {
@@ -261,7 +318,7 @@ function openZoomEditor(cellEl, img, cell, geom, applyNow) {
 
   const hint = document.createElement("div");
   hint.className = "zoom-hint";
-  hint.textContent = "✥ Drag the photo to reposition it · slide to zoom";
+  hint.textContent = "✥ Drag the photo (or use the arrows) to reposition it · slide to zoom";
   modal.appendChild(hint);
 
   const slider = document.createElement("input");
@@ -277,15 +334,60 @@ function openZoomEditor(cellEl, img, cell, geom, applyNow) {
   });
   modal.appendChild(slider);
 
+  // Fine X/Y nudge — a precise complement to free dragging. Direction accounts for
+  // flipH so the arrows always move the photo the way it visually looks on screen,
+  // even though a flipped image's underlying crop.x runs the opposite way.
+  const NUDGE_STEP = 0.04;
+  function nudge(dx, dy) {
+    const { sw, sh } = computeCropRect(cell.photo.width, cell.photo.height, geom.w, geom.h, cell.crop);
+    const maxX = cell.photo.width - sw;
+    const maxY = cell.photo.height - sh;
+    const xDir = cell.crop.flipH ? -1 : 1;
+    if (maxX > 0) cell.crop.x = clamp01(cell.crop.x + dx * NUDGE_STEP * xDir);
+    if (maxY > 0) cell.crop.y = clamp01(cell.crop.y + dy * NUDGE_STEP);
+    applyBoth();
+  }
+
+  const nudgePad = document.createElement("div");
+  nudgePad.className = "nudge-pad";
+  const mkNudgeBtn = (symbol, dx, dy, extraClass) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "nudge-btn" + (extraClass ? " " + extraClass : "");
+    b.textContent = symbol;
+    b.addEventListener("click", () => nudge(dx, dy));
+    return b;
+  };
+  nudgePad.appendChild(mkNudgeBtn("▲", 0, -1, "nudge-up"));
+  const nudgeMidRow = document.createElement("div");
+  nudgeMidRow.className = "nudge-mid-row";
+  nudgeMidRow.appendChild(mkNudgeBtn("◀", -1, 0));
+  nudgeMidRow.appendChild(mkNudgeBtn("▶", 1, 0));
+  nudgePad.appendChild(nudgeMidRow);
+  nudgePad.appendChild(mkNudgeBtn("▼", 0, 1, "nudge-down"));
+  modal.appendChild(nudgePad);
+
   const btnRow = document.createElement("div");
   btnRow.className = "zoom-btn-row";
+
+  const flipBtn = document.createElement("button");
+  flipBtn.type = "button";
+  flipBtn.textContent = "Flip ⇋";
+  flipBtn.classList.toggle("active", !!cell.crop.flipH);
+  flipBtn.addEventListener("click", () => {
+    cell.crop.flipH = !cell.crop.flipH;
+    flipBtn.classList.toggle("active", !!cell.crop.flipH);
+    applyBoth();
+  });
+  btnRow.appendChild(flipBtn);
 
   const resetBtn = document.createElement("button");
   resetBtn.type = "button";
   resetBtn.textContent = "Reset";
   resetBtn.addEventListener("click", () => {
-    cell.crop = { zoom: 1, x: 0.5, y: 0.5 };
+    cell.crop = { zoom: 1, x: 0.5, y: 0.5, flipH: false };
     slider.value = "1";
+    flipBtn.classList.remove("active");
     applyBoth();
   });
   btnRow.appendChild(resetBtn);
@@ -295,7 +397,12 @@ function openZoomEditor(cellEl, img, cell, geom, applyNow) {
     document.removeEventListener("keydown", onKey);
   }
   function onKey(e) {
-    if (e.key === "Escape") close();
+    if (e.key === "Escape") return close();
+    const arrowDeltas = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
+    if (arrowDeltas[e.key]) {
+      e.preventDefault();
+      nudge(...arrowDeltas[e.key]);
+    }
   }
   document.addEventListener("keydown", onKey);
 
@@ -331,9 +438,10 @@ function openZoomEditor(cellEl, img, cell, geom, applyNow) {
     const scale = rect.width / sw; // screen px per image px
     const maxX = cell.photo.width - sw;
     const maxY = cell.photo.height - sh;
+    const xDir = cell.crop.flipH ? -1 : 1;
     const dxImg = (e.clientX - startPx) / scale;
     const dyImg = (e.clientY - startPy) / scale;
-    cell.crop.x = maxX > 0 ? clamp01(startCropX - dxImg / maxX) : 0.5;
+    cell.crop.x = maxX > 0 ? clamp01(startCropX - (dxImg / maxX) * xDir) : 0.5;
     cell.crop.y = maxY > 0 ? clamp01(startCropY - dyImg / maxY) : 0.5;
     applyBoth();
   });
